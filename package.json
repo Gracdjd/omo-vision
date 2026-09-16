@@ -1,0 +1,41 @@
+{
+  "name": "omo-vision",
+  "version": "0.1.0",
+  "description": "Zero-config vision bridge for OhMyOpenCode (OMO) — pasted images are auto-saved and delegated to multimodal-looker via look_at, so text-only models can act on them. Also configurable for vanilla OpenCode.",
+  "keywords": [
+    "opencode",
+    "oh-my-opencode",
+    "omo",
+    "vision",
+    "multimodal",
+    "subagent",
+    "plugin"
+  ],
+  "homepage": "https://github.com/Gracdjd/omo-vision",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Gracdjd/omo-vision.git"
+  },
+  "license": "MIT",
+  "author": "Gracdjd",
+  "bin": {
+    "omo-vision": "bin/install.js"
+  },
+  "files": [
+    "bin/",
+    "plugins/",
+    "README.md",
+    "README_zh.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@types/bun": "latest"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
