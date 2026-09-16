@@ -31,6 +31,12 @@ look_at 运行 multimodal-looker（视觉模型）→ 分析结果返回主模�
 ## 安装
 
 ```bash
+npx omo-vision
+```
+
+or from GitHub directly:
+
+```bash
 npx github:Gracdjd/omo-vision
 ```
 
@@ -44,7 +50,7 @@ cp omo-vision/plugins/omo-vision.ts ~/.config/opencode/plugins/
 卸载：
 
 ```bash
-npx github:Gracdjd/omo-vision --uninstall
+npx omo-vision --uninstall
 ```
 
 安装后**重启 OpenCode** —— 插件在启动时加载。

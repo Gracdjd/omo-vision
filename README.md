@@ -31,6 +31,12 @@ Native-vision models are detected via model metadata and left completely untouch
 ## Install
 
 ```bash
+npx omo-vision
+```
+
+or from GitHub directly:
+
+```bash
 npx github:Gracdjd/omo-vision
 ```
 
@@ -44,7 +50,7 @@ cp omo-vision/plugins/omo-vision.ts ~/.config/opencode/plugins/
 Uninstall:
 
 ```bash
-npx github:Gracdjd/omo-vision --uninstall
+npx omo-vision --uninstall
 ```
 
 Then **restart OpenCode** — plugins load at startup.

@@ -14,7 +14,7 @@
   "homepage": "https://github.com/Gracdjd/omo-vision",
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com/Gracdjd/omo-vision.git"
+    "url": "git+https://github.com/Gracdjd/omo-vision.git"
   },
   "license": "MIT",
   "author": "Gracdjd",
@@ -37,5 +37,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "bugs": {
+    "url": "https://github.com/Gracdjd/omo-vision/issues"
   }
 }
