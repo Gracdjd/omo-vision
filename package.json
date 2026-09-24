@@ -1,6 +1,6 @@
 {
   "name": "omo-vision",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Zero-config vision bridge for OhMyOpenCode (OMO) — pasted images are auto-saved and delegated to multimodal-looker via look_at, so text-only models can act on them. Also configurable for vanilla OpenCode.",
   "keywords": [
     "opencode",

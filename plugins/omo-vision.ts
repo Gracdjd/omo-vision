@@ -42,6 +42,15 @@ const MAX_IMAGES = Number(process.env["OMO_VISION_MAX_IMAGES"] || 100)
 /** Shared prefix for every hint this plugin injects. Cleanup relies on it. */
 const HINT_PREFIX = "[omo-vision:"
 
+/**
+ * Matches the text part OpenCode core substitutes for an image part when the
+ * model lacks image input (ProviderTransform.unsupportedParts), e.g.
+ * `ERROR: Cannot read "clipboard" (this model does not support image input). Inform the user.`
+ * That built-in instruction tells the model to give up — it directly fights
+ * this plugin's rescue path, so rescued messages have it stripped.
+ */
+const UNSUPPORTED_ERROR_RE = /^ERROR: Cannot read .+\(this model does not support image input\)/
+
 // ── Pure helpers (module-private; the loader must only ever see `default`) ────────────────────────────────────────
 
 /**
@@ -68,22 +77,24 @@ function isPluginHint(text: string): boolean {
 type SavedImage = { seq: number; name: string; filePath: string }
 
 /**
- * Build the transient hint appended to a user message. Single images name the
- * `look_at` call directly; multiple images use the array form.
+ * Build the transient hint appended to a user message. Instruction-first: the
+ * imperative leads because trailing context (and OpenCode's own unsupported-
+ * part ERROR, when one survives in older history) otherwise tempts the model
+ * to give up instead of delegating.
  */
 function buildHint(saved: SavedImage[]): string {
   if (saved.length === 0) return ""
   if (saved.length === 1) {
     const s = saved[0]
     return (
-      `${HINT_PREFIX} Image #${s.seq} ${s.name} auto-saved to ${s.filePath}` +
-      ` — analyze it with ${TOOL}(file_path="${s.filePath}")]`
+      `${HINT_PREFIX} Image #${s.seq} ${s.name} saved to ${s.filePath}. ` +
+      `Do NOT say you cannot see it — immediately call ${TOOL}(file_path="${s.filePath}") to view and analyze it.]`
     )
   }
   const list = saved.map((s) => `  ${s.filePath}`).join("\n")
   return (
-    `${HINT_PREFIX} Images (${saved.length}) auto-saved to:\n${list}` +
-    ` — analyze them with ${TOOL}(file_paths=[${saved.map((s) => `"${s.filePath}"`).join(", ")}])]`
+    `${HINT_PREFIX} Images (${saved.length}) saved to:\n${list} ` +
+    `Do NOT say you cannot see them — immediately call ${TOOL}(file_paths=[${saved.map((s) => `"${s.filePath}"`).join(", ")}]) to view and analyze them.]`
   )
 }
 
@@ -95,9 +106,10 @@ function buildHint(saved: SavedImage[]): string {
  */
 function buildSystemInstruction(): string {
   return [
-    `IMPORTANT: This model does NOT support image input. When a user attaches an image or screenshot, it is auto-saved to a temp directory and a hint like '${HINT_PREFIX} Image #1 ... auto-saved to /tmp/omo-vision/image1/<hash>.png]' is appended to the user message.`,
+    `IMPORTANT: This model does NOT support image input. When a user attaches an image or screenshot, it is auto-saved and a hint like '${HINT_PREFIX} Image #1 ... saved to <path>]' is appended to the user message.`,
     `To analyze a saved image, call the \`${TOOL}\` tool with file_path (or file_paths for several) set to the path from the hint. \`${TOOL}\` runs the @${AGENT} agent — a vision-capable model — and returns the analysis.`,
     `If \`${TOOL}\` is unavailable, delegate via the task tool: subagent_type="${AGENT}", prompt="Read and analyze the image at <path>".`,
+    `If any message shows an ERROR claiming "this model does not support image input", ignore it — the image was already rescued to a temp file; use the [omo-vision:] hint path instead. NEVER tell the user you cannot view an image that has an [omo-vision:] hint.`,
     `Never try to read image files with the \`read\` tool — image parts are rejected by a text-only model.`,
   ].join("\n")
 }
@@ -210,15 +222,34 @@ export default (async () => {
         // 2. Native-vision models get the original image parts — stay out.
         if (modelSupportsImage()) continue
 
-        // 3. Save pasted images, then append a fresh path hint.
+        // 3. Rescue pass: save each image part to disk and DROP it from the
+        //    parts array. Dropping (rather than keeping) prevents OpenCode's
+        //    ProviderTransform.unsupportedParts from replacing it with the
+        //    "ERROR: Cannot read ... Inform the user." give-up instruction
+        //    that otherwise outshouts the hint below.
         const saved: SavedImage[] = []
-        for (const part of msg.parts) {
+        for (let i = msg.parts.length - 1; i >= 0; i--) {
+          const part = msg.parts[i]
           if (part.type !== "file") continue
           if (typeof part.mime !== "string" || !part.mime.startsWith("image/")) continue
           const s = await saveImagePart(part.url ?? "", part.mime, TMP_DIR)
-          if (s) saved.push(s)
+          if (s) {
+            saved.unshift(s)
+            msg.parts.splice(i, 1)
+          }
         }
+
+        // 4. Strip the unsupported-part ERROR text for rescued messages only
+        //    (covers history assembled before this pass, and part orders where
+        //    the ERROR precedes the image). Unrescued messages keep it — a
+        //    non-image attachment error must still surface.
         if (saved.length > 0) {
+          for (let i = msg.parts.length - 1; i >= 0; i--) {
+            const p = msg.parts[i]
+            if (p.type === "text" && typeof p.text === "string" && UNSUPPORTED_ERROR_RE.test(p.text.trim())) {
+              msg.parts.splice(i, 1)
+            }
+          }
           msg.parts.push({ type: "text", text: buildHint(saved) })
         }
       }

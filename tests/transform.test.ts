@@ -70,6 +70,7 @@ describe("system.transform", () => {
     expect(out.system[0]).toContain("`look_at`")
     expect(out.system[0]).toContain('subagent_type="multimodal-looker"')
     expect(out.system[0]).toContain("does NOT support image input")
+    expect(out.system[0]).toContain("NEVER tell the user you cannot view an image")
   })
 
   test("vision model gets NO instruction", async () => {
@@ -87,10 +88,12 @@ describe("messages.transform", () => {
       { type: "file", mime: "image/png", url: PNG_URL },
     )
     await hooks["experimental.chat.messages.transform"](undefined, out)
-    expect(out.messages[0].parts).toHaveLength(3)
+    expect(out.messages[0].parts).toHaveLength(2)
+    expect(out.messages[0].parts.some((p) => p.type === "file")).toBe(false)
     const hints = hintParts(out)
     expect(hints).toHaveLength(1)
     expect(hints[0]).toContain('look_at(file_path="')
+    expect(hints[0]).toContain("Do NOT say you cannot see")
     expect(hints[0]).toContain("image/png".split("/")[1]) // .png name
     expect(savedFiles().length).toBeGreaterThan(0)
   })
@@ -102,9 +105,11 @@ describe("messages.transform", () => {
       { type: "file", mime: "image/png", url: SECOND_PNG_URL },
     )
     await hooks["experimental.chat.messages.transform"](undefined, out)
+    expect(out.messages[0].parts.some((p) => p.type === "file")).toBe(false)
     const hints = hintParts(out)
     expect(hints).toHaveLength(1)
     expect(hints[0]).toContain("Images (2)")
+    expect(hints[0]).toContain("Do NOT say you cannot see")
     expect(hints[0]).toContain('file_paths=["')
     expect(savedFiles()).toHaveLength(2)
   })
@@ -116,6 +121,41 @@ describe("messages.transform", () => {
     await hooks["experimental.chat.messages.transform"](undefined, out)
     await hooks["experimental.chat.messages.transform"](undefined, out)
     expect(savedFiles().length).toBe(before + 0) // no new file for repeat paste
+  })
+
+  test("unsupported-part ERROR stripped when image rescued", async () => {
+    await asTextOnly()
+    const out = userMsg(
+      { type: "text", text: "what is this?" },
+      { type: "text", text: 'ERROR: Cannot read "clipboard" (this model does not support image input). Inform the user.' },
+      { type: "file", mime: "image/png", url: PNG_URL },
+    )
+    await hooks["experimental.chat.messages.transform"](undefined, out)
+    const texts = out.messages[0].parts.filter((p) => p.type === "text").map((p) => p.text)
+    expect(texts.some((t) => t.startsWith("ERROR: Cannot read"))).toBe(false)
+    expect(hintParts(out)).toHaveLength(1)
+  })
+
+  test("ERROR part before the image is also stripped", async () => {
+    await asTextOnly()
+    const out = userMsg(
+      { type: "file", mime: "image/png", url: PNG_URL },
+      { type: "text", text: 'ERROR: Cannot read "clipboard" (this model does not support image input). Inform the user.' },
+    )
+    await hooks["experimental.chat.messages.transform"](undefined, out)
+    const texts = out.messages[0].parts.filter((p) => p.type === "text").map((p) => p.text)
+    expect(texts.some((t) => t.startsWith("ERROR: Cannot read"))).toBe(false)
+  })
+
+  test("unsupported-part ERROR kept when no image rescued", async () => {
+    await asTextOnly()
+    const out = userMsg(
+      { type: "text", text: "see this pdf" },
+      { type: "text", text: 'ERROR: Cannot read "doc.pdf" (this model does not support image input). Inform the user.' },
+    )
+    await hooks["experimental.chat.messages.transform"](undefined, out)
+    const texts = out.messages[0].parts.filter((p) => p.type === "text").map((p) => p.text)
+    expect(texts.some((t) => t.startsWith("ERROR: Cannot read"))).toBe(true)
   })
 
   test("non-base64 file parts (file:// urls) are ignored", async () => {
