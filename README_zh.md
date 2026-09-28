@@ -83,6 +83,7 @@ export OMO_VISION_AGENT=image-reader   # 任何配置了视觉模型的 subagent
 
 - 去重：相同内容（全量 base64 的 MD5）复用同一个临时文件
 - LRU 淘汰：磁盘上最多保留 `OMO_VISION_MAX_IMAGES` 个图片目录
+- read 守卫：纯文本模型 `read` 已保存的图片时会被改写为指向 `look_at` 的指路文本，选错工具的自愈
 - 每次 transform 都会清理旧提示，会话中从纯文本模型切到视觉模型不会泄漏旧提示
 - 跳过压缩/摘要消息
 - 写盘失败降级为跳过 —— 保存失败不会中断对话轮次

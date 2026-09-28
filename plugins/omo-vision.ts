@@ -51,6 +51,9 @@ const HINT_PREFIX = "[omo-vision:"
  */
 const UNSUPPORTED_ERROR_RE = /^ERROR: Cannot read .+\(this model does not support image input\)/
 
+/** Image extensions the read-guard redirects to the sidecar note. */
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|avif|tiff?)$/i
+
 // ── Pure helpers (module-private; the loader must only ever see `default`) ────────────────────────────────────────
 
 /**
@@ -194,6 +197,33 @@ export default (async () => {
   await fs.mkdir(TMP_DIR, { recursive: true }).catch(() => {})
 
   return {
+    "tool.execute.before": async (input: {
+      tool: string
+      sessionID?: string
+      args?: { filePath?: string; path?: string } & Record<string, unknown>
+    }, output: { args?: Record<string, unknown> }) => {
+      if (input.tool !== "read") return
+      const target = input.args?.filePath ?? input.args?.path
+      if (typeof target !== "string") return
+      if (!target.startsWith(TMP_DIR + path.sep)) return
+      if (!IMAGE_EXT_RE.test(target)) return
+      if (modelSupportsImage(input.sessionID)) return
+      // Text-only models ignore the hint and read() the image anyway; the read
+      // result is an image part, which UnsupportedParts turns back into the
+      // give-up ERROR. Redirect the read to a sidecar note that points at
+      // look_at, so the failure mode becomes a self-correcting instruction.
+      const sidecar = `${target}.txt`
+      if (!(await Bun.file(sidecar).exists())) {
+        await Bun.write(sidecar, [
+          `The file you tried to read is an IMAGE: ${target}`,
+          `The read tool cannot return image content on this model.`,
+          `Call ${TOOL}(file_path="${target}") instead — it runs a vision-capable agent and returns the analysis.`,
+          `If ${TOOL} is unavailable in this agent, tell the user the image is saved at ${target} and needs an agent with ${TOOL}.`,
+        ].join("\n")).catch(() => {})
+      }
+      output.args = { ...input.args, filePath: sidecar, path: sidecar }
+    },
+
     "experimental.chat.system.transform": async (input: unknown, output: { system: string[] }) => {
       const { model, sessionID } = input as { model?: unknown; sessionID?: string }
       const supported = detectImageSupport(model)

@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeAll } from "bun:test"
-import { mkdirSync, rmSync, existsSync, readdirSync } from "fs"
+import { mkdirSync, rmSync, existsSync, readdirSync, readFileSync } from "fs"
 import { join } from "path"
 
 // The plugin file must expose ONLY `export default` — OpenCode's plugin loader
@@ -23,9 +23,11 @@ process.env["OMO_VISION_MAX_IMAGES"] = "3"
 type Part = Record<string, string>
 type Message = { info: { role: string; summary?: boolean }; parts: Part[] }
 type MessagesOut = { messages: Message[] }
+type ToolExecInput = { tool: string; sessionID?: string; args?: { filePath?: string; path?: string } }
 type PluginHooks = {
   "experimental.chat.system.transform": (i: unknown, o: { system: string[] }) => Promise<void>
   "experimental.chat.messages.transform": (i: unknown, o: MessagesOut) => Promise<void>
+  "tool.execute.before": (i: ToolExecInput, o: { args?: Record<string, unknown> }) => Promise<void>
 }
 
 // Import AFTER env is set — module reads OMO_VISION_DIR at load time.
@@ -202,6 +204,39 @@ describe("messages.transform", () => {
     await hooks["experimental.chat.messages.transform"](undefined, out)
     expect(out.messages[0].parts).toHaveLength(1)
     expect(out.messages[1].parts).toHaveLength(1)
+  })
+
+  test("read guard: text-only model redirected to sidecar note", async () => {
+    await asTextOnly()
+    // rescue an image first so the file exists
+    const out = userMsg({ type: "file", mime: "image/png", url: PNG_URL })
+    await hooks["experimental.chat.messages.transform"](undefined, out)
+    const hint = hintParts(out)[0]
+    const savedPath = hint.match(/saved to (\S+\.png)/)![1]
+    const exec: ToolExecInput = { tool: "read", sessionID: "s-text", args: { filePath: savedPath } }
+    const execOut: { args?: Record<string, unknown> } = {}
+    await hooks["tool.execute.before"](exec, execOut)
+    expect(execOut.args?.filePath).toBe(savedPath + ".txt")
+    expect(execOut.args?.path).toBe(savedPath + ".txt")
+    const note = readFileSync(savedPath + ".txt", "utf8")
+    expect(note).toContain("is an IMAGE")
+    expect(note).toContain('look_at(file_path="')
+  })
+
+  test("read guard: vision model and foreign paths untouched", async () => {
+    await hooks["experimental.chat.system.transform"](VISION, { system: [] })
+    const out = userMsg({ type: "file", mime: "image/png", url: PNG_URL })
+    await hooks["experimental.chat.messages.transform"](undefined, out)
+    const hint = hintParts(out)
+    const savedPath = hint.length ? hint[0].match(/saved to (\S+\.png)/)![1] : "/nonexistent.png"
+    // vision state: no hint injected (plugin silent), guard must not rewrite
+    const execOut: { args?: Record<string, unknown> } = {}
+    await hooks["tool.execute.before"]({ tool: "read", sessionID: "s-vision", args: { filePath: "/var/folders/x/omo-vision/image1/a.png" } }, execOut)
+    expect(execOut.args).toBeUndefined()
+    // outside TMP_DIR: untouched
+    await hooks["tool.execute.before"]({ tool: "read", sessionID: "s-vision", args: { filePath: "/etc/hosts" } }, execOut)
+    expect(execOut.args).toBeUndefined()
+    expect(savedPath.length).toBeGreaterThan(0)
   })
 
   test("temp dir auto-created at plugin init", () => {

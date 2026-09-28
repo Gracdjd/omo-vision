@@ -83,6 +83,7 @@ export OMO_VISION_AGENT=image-reader   # any subagent configured with a vision m
 
 - Dedup: identical pastes (MD5 over full base64) reuse the same temp file
 - LRU eviction keeps at most `OMO_VISION_MAX_IMAGES` image dirs on disk
+- Read guard: a text-only model that `read`s a saved image is redirected to a sidecar note pointing back at `look_at` — the wrong-tool failure mode self-corrects
 - Stale hints are removed on every transform pass, so switching from a text-only to a vision model mid-session never leaks old hints
 - Compaction/summary messages are skipped
 - Write failures degrade to a skip — a broken save never kills the turn
